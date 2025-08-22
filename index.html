@@ -50,21 +50,14 @@
       </div>
     </div>
 
-    <div id="add-item-section" class="bg-white rounded-lg shadow-lg p-6 mb-6 hidden">
-        <h2 class="text-xl font-semibold text-gray-800 mb-4">新しい項目を追加</h2>
-        <div class="space-y-4">
-            <div>
-                <label class="block text-sm font-medium text-gray-700">管理番号</label>
-                <input type="text" id="new-management-number" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700">物件名</label>
-                <input type="text" id="new-property-name" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-            </div>
-            <button id="add-item-btn" class="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                項目を追加
-            </button>
-        </div>
+    <div id="add-check-section" class="bg-white rounded-lg shadow-lg p-6 mb-6 hidden">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">チェック項目を追加</h2>
+      <div class="flex items-center gap-2">
+        <input type="text" id="new-check-name" placeholder="例: 電話連絡" class="flex-grow rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+        <button id="add-check-btn" class="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+          追加
+        </button>
+      </div>
     </div>
 
     <div id="checklist-container" class="space-y-4"></div>
@@ -76,24 +69,29 @@
 
   <script>
     let data = [];
+    let checkNames = [];
     const LOCAL_STORAGE_KEY = 'excelChecklistData';
+    const CHECK_NAMES_KEY = 'checklistCheckNames';
 
     // ページの読み込み時に保存されたデータを読み込む
     window.addEventListener('load', () => {
         const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+        const savedCheckNames = localStorage.getItem(CHECK_NAMES_KEY);
         if (savedData) {
             try {
                 data = JSON.parse(savedData);
+                checkNames = savedCheckNames ? JSON.parse(savedCheckNames) : [];
                 if (data.length > 0) {
                     renderChecklist();
                     updateProgress();
                     document.getElementById("progress-section").classList.remove("hidden");
-                    document.getElementById("add-item-section").classList.remove("hidden");
+                    document.getElementById("add-check-section").classList.remove("hidden");
                     document.getElementById("initial-message").classList.add("hidden");
                 }
             } catch (e) {
                 console.error("Failed to load data from localStorage", e);
                 localStorage.removeItem(LOCAL_STORAGE_KEY);
+                localStorage.removeItem(CHECK_NAMES_KEY);
             }
         }
     });
@@ -141,17 +139,18 @@
             propertyName: propertyNameCol >= 0 ? row[propertyNameCol] : "未設定",
             startTime: startTimeCol >= 0 ? formatDateTime(row[startTimeCol]) : "",
             endTime: endTimeCol >= 0 ? formatDateTime(row[endTimeCol]) : "",
-            checked: false,
-            checkedAt: null,
+            // チェック項目を空の配列として初期化
+            checks: [],
           }));
         
-        // 新しいデータを読み込んだらlocalStorageに保存
+        // 新しいデータを読み込んだらチェック項目の名前もリセット
+        checkNames = [];
         saveToLocalStorage();
 
         renderChecklist();
         updateProgress();
         document.getElementById("progress-section").classList.remove("hidden");
-        document.getElementById("add-item-section").classList.remove("hidden");
+        document.getElementById("add-check-section").classList.remove("hidden");
       } catch (err) {
         alert("読み込みエラー: " + err.message);
       } finally {
@@ -159,44 +158,46 @@
       }
     });
 
-    // 手動で項目を追加する機能
-    document.getElementById("add-item-btn").addEventListener("click", () => {
-        const managementNumberInput = document.getElementById("new-management-number");
-        const propertyNameInput = document.getElementById("new-property-name");
+    // 手動でチェック項目名を追加する機能
+    document.getElementById("add-check-btn").addEventListener("click", () => {
+        const newCheckNameInput = document.getElementById("new-check-name");
+        const newCheckName = newCheckNameInput.value.trim();
 
-        const newManagementNumber = managementNumberInput.value.trim();
-        const newPropertyName = propertyNameInput.value.trim();
-
-        if (newManagementNumber || newPropertyName) {
-            const newItem = {
-                id: data.length > 0 ? Math.max(...data.map(item => item.id)) + 1 : 0,
-                managementNumber: newManagementNumber || "未設定",
-                propertyName: newPropertyName || "未設定",
-                startTime: "",
-                endTime: "",
-                checked: false,
-                checkedAt: null,
-            };
-            data.push(newItem);
+        if (newCheckName && !checkNames.includes(newCheckName)) {
+            checkNames.push(newCheckName);
+            data.forEach(item => {
+                item.checks.push({
+                    name: newCheckName,
+                    checked: false,
+                    checkedAt: null
+                });
+            });
             saveToLocalStorage();
             renderChecklist();
             updateProgress();
             
             // フォームをリセット
-            managementNumberInput.value = "";
-            propertyNameInput.value = "";
+            newCheckNameInput.value = "";
+        } else if (checkNames.includes(newCheckName)) {
+            alert("そのチェック項目は既に存在します。");
         }
     });
-
-    function handleCheck(id) {
+    
+    // チェック状態を切り替える関数
+    function handleCheck(itemId, checkName) {
       const now = new Date().toLocaleString("ja-JP", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
-      data = data.map((item) =>
-        item.id === id ? { ...item, checked: !item.checked, checkedAt: !item.checked ? now : null } : item
-      );
-      // チェック状態が変更されたらlocalStorageに保存
-      saveToLocalStorage();
-      renderChecklist();
-      updateProgress();
+      
+      const item = data.find(i => i.id === itemId);
+      if (item) {
+          const check = item.checks.find(c => c.name === checkName);
+          if (check) {
+              check.checked = !check.checked;
+              check.checkedAt = check.checked ? now : null;
+              saveToLocalStorage();
+              renderChecklist();
+              updateProgress();
+          }
+      }
     }
 
     function renderChecklist() {
@@ -204,42 +205,62 @@
       container.innerHTML = "";
       data.forEach((item) => {
         const div = document.createElement("div");
-        div.className = `bg-white rounded-lg shadow-lg p-4 border-l-4 ${item.checked ? "border-green-500 bg-green-50" : "border-blue-500"}`;
+        div.className = `bg-white rounded-lg shadow-lg p-4 border-l-4 ${
+            item.checks.every(c => c.checked) ? "border-green-500 bg-green-50" : "border-blue-500"
+        }`;
         div.innerHTML = `
-          <div class="flex items-center gap-4">
-            <button onclick="handleCheck(${item.id})" class="w-10 h-10 rounded-full ${item.checked ? "bg-green-500 text-white" : "bg-gray-200"}">
-              ${item.checked ? "✔" : ""}
-            </button>
-            <div>
+          <div class="flex items-start gap-4">
+            <div class="flex-grow">
               <span class="font-semibold">${item.managementNumber}</span> ${item.propertyName}
-              ${item.startTime ? `<div class="text-sm text-blue-600">開始: ${item.startTime}</div>` : ""}
-              ${item.endTime ? `<div class="text-sm text-red-600">終了: ${item.endTime}</div>` : ""}
-              ${item.checkedAt ? `<div class="text-sm text-green-600">完了日時: ${item.checkedAt}</div>` : ""}
+              <div class="mt-2 space-y-2">
+                ${item.startTime ? `<div class="text-sm text-blue-600">開始: ${item.startTime}</div>` : ""}
+                ${item.endTime ? `<div class="text-sm text-red-600">終了: ${item.endTime}</div>` : ""}
+              </div>
             </div>
+          </div>
+          <div class="mt-4 border-t pt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+            ${item.checks.map(check => `
+                <div class="flex items-center gap-2">
+                    <button onclick="handleCheck(${item.id}, '${check.name}')" class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${check.checked ? "bg-green-500 text-white" : "bg-gray-200"}">
+                        ${check.checked ? "✔" : ""}
+                    </button>
+                    <div class="text-sm text-gray-700 flex-grow">${check.name}</div>
+                </div>
+            `).join('')}
           </div>`;
         container.appendChild(div);
       });
     }
 
     function updateProgress() {
-      const completed = data.filter((i) => i.checked).length;
-      const total = data.length;
-      const percent = total ? Math.round((completed / total) * 100) : 0;
-      document.getElementById("progress-text").textContent = `完了: ${completed} / ${total}`;
+      const allChecks = data.flatMap(item => item.checks);
+      const completedChecks = allChecks.filter(c => c.checked).length;
+      const totalChecks = allChecks.length;
+      const percent = totalChecks ? Math.round((completedChecks / totalChecks) * 100) : 0;
+      document.getElementById("progress-text").textContent = `完了: ${completedChecks} / ${totalChecks}`;
       document.getElementById("progress-percentage").textContent = `${percent}%`;
       document.getElementById("progress-bar").style.width = `${percent}%`;
     }
 
     document.getElementById("export-btn").addEventListener("click", () => {
       if (!data.length) return;
-      const exportData = data.map((i) => ({
-        管理番号: i.managementNumber,
-        物件名: i.propertyName,
-        予定開始時間: i.startTime,
-        予定終了時間: i.endTime,
-        チェック状態: i.checked ? "完了" : "未完了",
-        チェック日時: i.checkedAt || "",
-      }));
+      
+      const exportData = data.map((i) => {
+        const row = {
+          管理番号: i.managementNumber,
+          物件名: i.propertyName,
+          予定開始時間: i.startTime,
+          予定終了時間: i.endTime,
+        };
+        // 各チェック項目を列として追加
+        i.checks.forEach(check => {
+            row[check.name] = check.checked ? "完了" : "未完了";
+            // 完了日時もエクスポートしたい場合は以下を追加
+            // row[`${check.name}完了日時`] = check.checkedAt || "";
+        });
+        return row;
+      });
+
       const ws = XLSX.utils.json_to_sheet(exportData);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "チェックリスト");
@@ -249,6 +270,7 @@
     // localStorageにデータを保存する関数
     function saveToLocalStorage() {
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+        localStorage.setItem(CHECK_NAMES_KEY, JSON.stringify(checkNames));
     }
 
     // Service Worker登録
