@@ -11,6 +11,20 @@
   <link rel="manifest" href="manifest.json" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* 未チェック状態のボタンのスタイル */
+    .btn-unchecked {
+        @apply bg-gray-200 text-gray-800;
+    }
+    /* 完了状態のボタンのスタイル */
+    .btn-checked {
+        @apply bg-green-500 text-white;
+    }
+    /* 不要状態のボタンのスタイル */
+    .btn-unnecessary {
+        @apply bg-red-500 text-white;
+    }
+  </style>
 </head>
 <body class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
   <div class="max-w-4xl mx-auto">
@@ -168,8 +182,9 @@
             data.forEach(item => {
                 item.checks.push({
                     name: newCheckName,
-                    checked: false,
-                    checkedAt: null
+                    // 状態を0:未チェック, 1:完了, 2:不要 で管理
+                    status: 0,
+                    completedAt: null,
                 });
             });
             saveToLocalStorage();
@@ -191,8 +206,9 @@
       if (item) {
           const check = item.checks.find(c => c.name === checkName);
           if (check) {
-              check.checked = !check.checked;
-              check.checkedAt = check.checked ? now : null;
+              // 状態を0, 1, 2で循環させる
+              check.status = (check.status + 1) % 3;
+              check.completedAt = check.status === 1 ? now : null;
               saveToLocalStorage();
               renderChecklist();
               updateProgress();
@@ -204,10 +220,13 @@
       const container = document.getElementById("checklist-container");
       container.innerHTML = "";
       data.forEach((item) => {
+        const isCompleted = item.checks.every(c => c.status === 1 || c.status === 2);
+        const borderColor = isCompleted ? "border-green-500" : "border-blue-500";
+        const bgColor = isCompleted ? "bg-green-50" : "bg-white";
+
         const div = document.createElement("div");
-        div.className = `bg-white rounded-lg shadow-lg p-4 border-l-4 ${
-            item.checks.every(c => c.checked) ? "border-green-500 bg-green-50" : "border-blue-500"
-        }`;
+        div.className = `rounded-lg shadow-lg p-4 border-l-4 ${borderColor} ${bgColor}`;
+
         div.innerHTML = `
           <div class="flex items-start gap-4">
             <div class="flex-grow">
@@ -219,14 +238,29 @@
             </div>
           </div>
           <div class="mt-4 border-t pt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-            ${item.checks.map(check => `
-                <div class="flex items-center gap-2">
-                    <button onclick="handleCheck(${item.id}, '${check.name}')" class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${check.checked ? "bg-green-500 text-white" : "bg-gray-200"}">
-                        ${check.checked ? "✔" : ""}
-                    </button>
-                    <div class="text-sm text-gray-700 flex-grow">${check.name}</div>
-                </div>
-            `).join('')}
+            ${item.checks.map(check => {
+                let buttonClass;
+                let buttonText;
+                if (check.status === 1) {
+                    buttonClass = "btn-checked";
+                    buttonText = "✔";
+                } else if (check.status === 2) {
+                    buttonClass = "btn-unnecessary";
+                    buttonText = "✕";
+                } else {
+                    buttonClass = "btn-unchecked";
+                    buttonText = "";
+                }
+                const completedAtHtml = check.completedAt ? `<div class="text-sm text-green-600 mt-1">完了: ${check.completedAt}</div>` : '';
+                return `
+                    <div class="flex items-center gap-2">
+                        <button onclick="handleCheck(${item.id}, '${check.name}')" class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${buttonClass}">
+                            ${buttonText}
+                        </button>
+                        <div class="text-sm text-gray-700 flex-grow">${check.name}</div>
+                    </div>
+                `;
+            }).join('')}
           </div>`;
         container.appendChild(div);
       });
@@ -234,7 +268,8 @@
 
     function updateProgress() {
       const allChecks = data.flatMap(item => item.checks);
-      const completedChecks = allChecks.filter(c => c.checked).length;
+      // 完了状態のチェックのみをカウント
+      const completedChecks = allChecks.filter(c => c.status === 1).length;
       const totalChecks = allChecks.length;
       const percent = totalChecks ? Math.round((completedChecks / totalChecks) * 100) : 0;
       document.getElementById("progress-text").textContent = `完了: ${completedChecks} / ${totalChecks}`;
@@ -254,9 +289,14 @@
         };
         // 各チェック項目を列として追加
         i.checks.forEach(check => {
-            row[check.name] = check.checked ? "完了" : "未完了";
-            // 完了日時もエクスポートしたい場合は以下を追加
-            // row[`${check.name}完了日時`] = check.checkedAt || "";
+            let statusText = "未完了";
+            if (check.status === 1) {
+                statusText = "完了";
+            } else if (check.status === 2) {
+                statusText = "不要";
+            }
+            row[check.name] = statusText;
+            row[`${check.name}完了日時`] = check.completedAt || "";
         });
         return row;
       });
