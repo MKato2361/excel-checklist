@@ -59,6 +59,27 @@
 
   <script>
     let data = [];
+    const LOCAL_STORAGE_KEY = 'excelChecklistData';
+
+    // ページの読み込み時に保存されたデータを読み込む
+    window.addEventListener('load', () => {
+        const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (savedData) {
+            try {
+                data = JSON.parse(savedData);
+                if (data.length > 0) {
+                    renderChecklist();
+                    updateProgress();
+                    document.getElementById("progress-section").classList.remove("hidden");
+                    document.getElementById("initial-message").classList.add("hidden");
+                    // ファイル名表示はlocalStorageから復元できないため、非表示のまま
+                }
+            } catch (e) {
+                console.error("Failed to load data from localStorage", e);
+                localStorage.removeItem(LOCAL_STORAGE_KEY);
+            }
+        }
+    });
 
     // ファイルアップロード
     document.getElementById("file-upload").addEventListener("change", async (event) => {
@@ -106,6 +127,9 @@
             checked: false,
             checkedAt: null,
           }));
+        
+        // 新しいデータを読み込んだらlocalStorageに保存
+        saveToLocalStorage();
 
         renderChecklist();
         updateProgress();
@@ -122,6 +146,8 @@
       data = data.map((item) =>
         item.id === id ? { ...item, checked: !item.checked, checkedAt: !item.checked ? now : null } : item
       );
+      // チェック状態が変更されたらlocalStorageに保存
+      saveToLocalStorage();
       renderChecklist();
       updateProgress();
     }
@@ -172,6 +198,11 @@
       XLSX.utils.book_append_sheet(wb, ws, "チェックリスト");
       XLSX.writeFile(wb, "チェックリスト.xlsx");
     });
+    
+    // localStorageにデータを保存する関数
+    function saveToLocalStorage() {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+    }
 
     // Service Worker登録
     if ("serviceWorker" in navigator) {
