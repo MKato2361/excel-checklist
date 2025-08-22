@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Excelチェックリスト管理ツール</title>
+  <meta name="theme-color" content="#2563eb" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="チェックリスト" />
+  <link rel="manifest" href="manifest.json" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+  <div class="max-w-4xl mx-auto">
+    <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+      <h1 class="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+        📊 Excelチェックリスト管理ツール
+      </h1>
+      
+      <div class="border-2 border-dashed border-blue-300 rounded-lg p-6 text-center">
+        <input type="file" accept=".xlsx,.xls" id="file-upload" class="hidden" />
+        <label for="file-upload" class="cursor-pointer flex flex-col items-center gap-2 text-blue-600">
+          ⬆️
+          <span class="font-semibold">Excelファイルを選択</span>
+          <span class="text-sm text-gray-500">(.xlsx, .xls対応)</span>
+        </label>
+        <div id="file-name" class="mt-2 text-sm text-gray-600 hidden"></div>
+      </div>
+      <div id="loading" class="mt-4 text-center hidden">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <p class="mt-2 text-blue-600">ファイルを読み込み中...</p>
+      </div>
+    </div>
+
+    <div id="progress-section" class="bg-white rounded-lg shadow-lg p-6 mb-6 hidden">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-semibold text-gray-800">進捗状況</h2>
+        <button id="export-btn" class="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg">⬇️ エクスポート</button>
+      </div>
+      <div class="mb-4">
+        <div class="flex justify-between text-sm text-gray-600 mb-1">
+          <span id="progress-text">完了: 0 / 0</span>
+          <span id="progress-percentage">0%</span>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-3">
+          <div id="progress-bar" class="bg-gradient-to-r from-green-500 to-green-600 h-3 rounded-full transition-all duration-300" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="checklist-container" class="space-y-4"></div>
+
+    <div id="initial-message" class="bg-white rounded-lg shadow-lg p-12 text-center">
+      <p class="text-gray-500 text-lg">Excelファイルをアップロードしてチェックリストを開始してください</p>
+    </div>
+  </div>
+
+  <script>
+    let data = [];
+
+    // ファイルアップロード
+    document.getElementById("file-upload").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const loading = document.getElementById("loading");
+      const fileName = document.getElementById("file-name");
+      const initialMessage = document.getElementById("initial-message");
+
+      loading.classList.remove("hidden");
+      fileName.textContent = `選択中: ${file.name}`;
+      fileName.classList.remove("hidden");
+      initialMessage.classList.add("hidden");
+
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: "array" });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+        const headers = jsonData[0] || [];
+        const rows = jsonData.slice(1);
+
+        const findColumn = (keywords) =>
+          headers.findIndex((header) =>
+            keywords.some((keyword) => header && header.toString().toLowerCase().includes(keyword.toLowerCase()))
+          );
+
+        const managementNumberCol = findColumn(["管理番号","番号","id","no"]);
+        const propertyNameCol = findColumn(["物件名","物件","プロパティ","名称"]);
+        const startTimeCol = findColumn(["開始","start","予定開始","開始時間"]);
+        const endTimeCol = findColumn(["終了","end","予定終了","終了時間"]);
+
+        const formatDateTime = (v) => (v ? XLSX.SSF.format('yyyy/mm/dd hh:mm', v) : "");
+
+        data = rows
+          .filter((row) => row.some((c) => c !== undefined && c !== ""))
+          .map((row, index) => ({
+            id: index,
+            managementNumber: managementNumberCol >= 0 ? row[managementNumberCol] : `No.${index + 1}`,
+            propertyName: propertyNameCol >= 0 ? row[propertyNameCol] : "未設定",
+            startTime: startTimeCol >= 0 ? formatDateTime(row[startTimeCol]) : "",
+            endTime: endTimeCol >= 0 ? formatDateTime(row[endTimeCol]) : "",
+            checked: false,
+            checkedAt: null,
+          }));
+
+        renderChecklist();
+        updateProgress();
+        document.getElementById("progress-section").classList.remove("hidden");
+      } catch (err) {
+        alert("読み込みエラー: " + err.message);
+      } finally {
+        loading.classList.add("hidden");
+      }
+    });
+
+    function handleCheck(id) {
+      const now = new Date().toLocaleString("ja-JP", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
+      data = data.map((item) =>
+        item.id === id ? { ...item, checked: !item.checked, checkedAt: !item.checked ? now : null } : item
+      );
+      renderChecklist();
+      updateProgress();
+    }
+
+    function renderChecklist() {
+      const container = document.getElementById("checklist-container");
+      container.innerHTML = "";
+      data.forEach((item) => {
+        const div = document.createElement("div");
+        div.className = `bg-white rounded-lg shadow-lg p-4 border-l-4 ${item.checked ? "border-green-500 bg-green-50" : "border-blue-500"}`;
+        div.innerHTML = `
+          <div class="flex items-center gap-4">
+            <button onclick="handleCheck(${item.id})" class="w-10 h-10 rounded-full ${item.checked ? "bg-green-500 text-white" : "bg-gray-200"}">
+              ${item.checked ? "✔" : ""}
+            </button>
+            <div>
+              <span class="font-semibold">${item.managementNumber}</span> ${item.propertyName}
+              ${item.startTime ? `<div class="text-sm text-blue-600">開始: ${item.startTime}</div>` : ""}
+              ${item.endTime ? `<div class="text-sm text-red-600">終了: ${item.endTime}</div>` : ""}
+              ${item.checkedAt ? `<div class="text-sm text-green-600">完了日時: ${item.checkedAt}</div>` : ""}
+            </div>
+          </div>`;
+        container.appendChild(div);
+      });
+    }
+
+    function updateProgress() {
+      const completed = data.filter((i) => i.checked).length;
+      const total = data.length;
+      const percent = total ? Math.round((completed / total) * 100) : 0;
+      document.getElementById("progress-text").textContent = `完了: ${completed} / ${total}`;
+      document.getElementById("progress-percentage").textContent = `${percent}%`;
+      document.getElementById("progress-bar").style.width = `${percent}%`;
+    }
+
+    document.getElementById("export-btn").addEventListener("click", () => {
+      if (!data.length) return;
+      const exportData = data.map((i) => ({
+        管理番号: i.managementNumber,
+        物件名: i.propertyName,
+        予定開始時間: i.startTime,
+        予定終了時間: i.endTime,
+        チェック状態: i.checked ? "完了" : "未完了",
+        チェック日時: i.checkedAt || "",
+      }));
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "チェックリスト");
+      XLSX.writeFile(wb, "チェックリスト.xlsx");
+    });
+
+    // Service Worker登録
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("sw.js");
+      });
+    }
+  </script>
+</body>
+</html>
