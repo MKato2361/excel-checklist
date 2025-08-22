@@ -241,9 +241,11 @@
             ${item.checks.map(check => {
                 let buttonClass;
                 let buttonText;
+                let completedAtHtml = '';
                 if (check.status === 1) {
                     buttonClass = "btn-checked";
                     buttonText = "✔";
+                    completedAtHtml = `<div class="text-xs text-gray-500">${check.completedAt || ''}</div>`;
                 } else if (check.status === 2) {
                     buttonClass = "btn-unnecessary";
                     buttonText = "✕";
@@ -256,7 +258,10 @@
                         <button onclick="handleCheck(${item.id}, '${check.name}')" class="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-lg ${buttonClass}">
                             ${buttonText}
                         </button>
-                        <div class="text-sm text-gray-700 flex-grow">${check.name}</div>
+                        <div>
+                            <div class="text-sm text-gray-700">${check.name}</div>
+                            ${completedAtHtml}
+                        </div>
                     </div>
                 `;
             }).join('')}
