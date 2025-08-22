@@ -251,10 +251,9 @@
                     buttonClass = "btn-unchecked";
                     buttonText = "□";
                 }
-                const completedAtHtml = check.completedAt ? `<div class="text-sm text-green-600 mt-1">完了: ${check.completedAt}</div>` : '';
                 return `
                     <div class="flex items-center gap-2">
-                        <button onclick="handleCheck(${item.id}, '${check.name}')" class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${buttonClass}">
+                        <button onclick="handleCheck(${item.id}, '${check.name}')" class="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-lg ${buttonClass}">
                             ${buttonText}
                         </button>
                         <div class="text-sm text-gray-700 flex-grow">${check.name}</div>
